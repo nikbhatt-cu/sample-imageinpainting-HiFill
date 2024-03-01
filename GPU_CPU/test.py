@@ -1,10 +1,14 @@
 import cv2
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+# import tensorflow as tf
 import glob 
 import argparse
 import os
+import time
 
+from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
+tf.disable_v2_behavior()
 
 INPUT_SIZE = 512  # input image size for Generator
 ATTENTION_SIZE = 32 # size of contextual attention
@@ -147,11 +151,34 @@ with tf.Graph().as_default():
     attention_node = sess.graph.get_tensor_by_name('attention:0')
     mask_512_node = sess.graph.get_tensor_by_name('mask_processed:0')
 
+    t = time.localtime()
+    current_time = time.strftime("%H:%M:%S", t)
+    print(current_time)
+    # total_start = time.time()
+    total_time = 0.0
+    total_images = 0
     for path_img, path_mask in zip(paths_img, paths_mask):
+        start = time.time()
         raw_img = cv2.imread(path_img)
         raw_mask = cv2.imread(path_mask)
         inpainted = inpaint(raw_img, raw_mask, sess, inpainted_512_node, attention_node, mask_512_node, image_ph, mask_ph, args.multiple)
+        end = time.time()
+        total_images += 1
+        inpaint_time = end - start
+        total_time += end - start
         filename = args.output_dir + '/' + os.path.basename(path_img)
         cv2.imwrite(filename + '_inpainted.jpg', inpainted)
+
+        # calculate ssim and ms-ssim
+        mssim_start = time.time()
+        mssim2 = tf.image.ssim_multiscale(
+            raw_img,
+            inpainted,
+            255
+        )
+        mssim_val = mssim2.eval()
+        print(f"image\t{os.path.basename(path_img)}\t(\t{raw_img.shape[1]}\tx\t{raw_img.shape[0]}\t) took\t{end - start}\tMS-SSIM =\t{mssim_val}\ttook {time.time() - mssim_start}")
+
+    print(f"total execution time = {total_time} for {total_images}")
 
 
